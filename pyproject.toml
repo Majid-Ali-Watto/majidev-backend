@@ -1,0 +1,17 @@
+[project]
+name = "majidev-backend"
+version = "0.1.0"
+description = "Publishes the portfolio's content to the owner's GitHub profile (README and profile details)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.117",
+    "httpx>=0.28",
+    "google-auth>=2.40",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "uvicorn>=0.35"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
