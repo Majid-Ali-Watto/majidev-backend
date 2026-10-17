@@ -52,7 +52,19 @@ class GitHub:
             body["sha"] = current["sha"]
         result = await self._call("PUT", f"/repos/{repo}/contents/README.md", allow_404=True, json=body)
         if result is None:
-            raise HTTPException(502, f"Repository {repo} not found; create it on GitHub to get a profile README")
+            # GitHub answers 404, not 403, when the token may not write to a repository. A public repository is readable
+            # by any token, so a README we could read means the repository exists and the token lacks write access.
+            if current:
+                raise HTTPException(
+                    502,
+                    f"GITHUB_TOKEN cannot write to {repo}: in the fine-grained token, add {repo} under "
+                    "Repository access and set Contents to Read and write",
+                )
+            raise HTTPException(
+                502,
+                f"GitHub returned 404 for {repo}: create that repository for a profile README, or give GITHUB_TOKEN "
+                "access to it (Repository access, Contents: Read and write)",
+            )
         return {"status": "updated", "url": result["content"]["html_url"], "commit": result["commit"]["html_url"]}
 
     async def bio(self) -> str:

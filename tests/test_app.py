@@ -121,7 +121,15 @@ def test_skips_commit_when_readme_unchanged(claims, github):
 def test_missing_profile_repository_is_reported(claims, github):
     response = client.post("/github/publish", json={"readme": "# Hi"}, headers=AUTH)
     assert response.status_code == 502
-    assert "octo/octo not found" in response.json()["detail"]
+    assert "create that repository" in response.json()["detail"]
+
+
+def test_token_without_write_access_is_explained(claims, github):
+    # The README is readable (public repository) but GitHub refuses the write with 404
+    github.routes[("GET", README_PATH)] = (200, {"content": encoded("old"), "sha": "abc", "html_url": "readme-url"})
+    response = client.post("/github/publish", json={"readme": "# New"}, headers=AUTH)
+    assert response.status_code == 502
+    assert "cannot write to octo/octo" in response.json()["detail"]
 
 
 def test_updates_only_given_profile_fields(claims, github):
