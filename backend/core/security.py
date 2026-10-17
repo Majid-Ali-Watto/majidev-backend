@@ -1,20 +1,14 @@
-"""Only the portfolio's admin may call the API: requests carry the Firebase ID token of the /admin sign-in."""
+"""Who may call which route: the portfolio's admin (Firebase ID token of the /admin sign-in) or the Vercel Cron job."""
 
-import os
+import secrets
 
 from fastapi import Header, HTTPException
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
+from backend.core.config import setting
+
 _google = google_requests.Request()
-
-
-def setting(name: str) -> str:
-    """A required environment variable (see README.md)."""
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise HTTPException(500, f"{name} is not set on the server")
-    return value
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> str:
@@ -31,3 +25,9 @@ def require_admin(authorization: str | None = Header(default=None)) -> str:
     if claims.get("iss") != f"https://securetoken.google.com/{project}" or claims.get("sub") != admin_uid:
         raise HTTPException(403, "This account is not the portfolio admin")
     return admin_uid
+
+
+def require_cron(authorization: str | None = Header(default=None)) -> None:
+    """Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" (vercel.json schedules the call)."""
+    if not secrets.compare_digest(authorization or "", f"Bearer {setting('CRON_SECRET')}"):
+        raise HTTPException(401, "Not the scheduled job")

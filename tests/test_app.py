@@ -14,9 +14,10 @@ os.environ.update(
     CRON_SECRET="cron-secret",
 )
 
-import auth  # noqa: E402
 from app import app  # noqa: E402
-from github import API, GitHub, github_client  # noqa: E402
+from backend.core import security  # noqa: E402
+from backend.dependencies import github_repository  # noqa: E402
+from backend.repositories.github import API, GitHubRepository  # noqa: E402
 
 ADMIN_CLAIMS = {"iss": "https://securetoken.google.com/demo-project", "sub": "admin-uid"}
 AUTH = {"Authorization": "Bearer signed-in"}
@@ -33,7 +34,7 @@ def claims(monkeypatch):
             raise ValueError("bad token")
         return current
 
-    monkeypatch.setattr(auth.id_token, "verify_firebase_token", verify)
+    monkeypatch.setattr(security.id_token, "verify_firebase_token", verify)
     return current
 
 
@@ -57,9 +58,9 @@ def github():
 
     async def client():
         async with httpx.AsyncClient(base_url=API, transport=httpx.MockTransport(fake.handler)) as http:
-            yield GitHub(http)
+            yield GitHubRepository(http)
 
-    app.dependency_overrides[github_client] = client
+    app.dependency_overrides[github_repository] = client
     yield fake
     app.dependency_overrides.clear()
 
@@ -158,6 +159,14 @@ def test_cors_allows_only_configured_origins():
     other = client.options("/github/publish", headers={"Origin": "https://evil.example", **preflight})
     assert allowed.headers.get("access-control-allow-origin") == "https://site.example"
     assert "access-control-allow-origin" not in other.headers
+
+
+
+def test_missing_setting_is_a_clear_500(claims, monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN")
+    response = client.post("/github/publish", json={"readme": "x"}, headers=AUTH)
+    assert response.status_code == 500
+    assert response.json() == {"detail": "GITHUB_TOKEN is not set on the server"}
 
 
 CRON = {"Authorization": "Bearer cron-secret"}

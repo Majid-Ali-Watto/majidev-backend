@@ -1,6 +1,6 @@
 from datetime import date
 
-from experience import bio_from_readme, duration, refresh_readme, total
+from backend.services.experience import bio_from_readme, duration, refresh_readme, total
 
 TODAY = date(2026, 10, 18)
 

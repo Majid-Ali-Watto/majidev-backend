@@ -24,7 +24,8 @@ If GitHub refuses a fine-grained token, a classic token with the `public_repo` a
 
 ## 2. Deploy on Vercel
 
-1. Vercel → **Add New → Project** → import this repository. Vercel detects FastAPI and loads `app` from `app.py`.
+1. Vercel → **Add New → Project** → import this repository. Vercel detects FastAPI and loads `app` from `app.py`
+   (which re-exports it from the `backend` package; see CLAUDE.md for the code layout).
 2. Leave **Root Directory** as the repository root.
 3. Add these **Environment Variables**, then deploy (redeploy after changing any of them):
 
@@ -48,7 +49,7 @@ Environment variables, then redeploy the site. `/admin → GitHub` then shows a 
 `vercel.json` schedules `GET /github/refresh` once a day (03:17 UTC; on the Hobby plan Vercel may run it any time in
 that hour). The README that `/admin` publishes wraps every experience figure in an invisible marker holding the job
 dates it came from, e.g. `<!--experience:2025-09-15~Present,...-->**3Y 11M**<!--/experience-->`, plus a hidden copy
-of a bio that uses `Y-M-D`. The refresh recomputes those figures for today (`experience.py`, a port of the site's
+of a bio that uses `Y-M-D`. The refresh recomputes those figures for today (`backend/services/experience.py`, a port of the site's
 `src/utils/getExpYears.js`) and commits only when one changed, so it never publishes unpublished edits from `/admin`.
 To run it by hand: `curl -H "Authorization: Bearer $CRON_SECRET" https://<your-project>.vercel.app/github/refresh`.
 
@@ -58,9 +59,9 @@ The site and this service live in separate repositories but share three contract
 
 | Here | In the site repository |
 |---|---|
-| `PublishRequest` in `app.py` (`readme`, `profile` fields and limits) | `src/admin/GitHubPublish.jsx` and `buildProfile` in `src/admin/githubReadme.js` |
-| Marker formats in `experience.py` (`experience`, `duration`, `github-bio`) | `src/admin/githubReadme.js` |
-| `span` / `duration` / `total` in `experience.py` | `src/utils/getExpYears.js` |
+| `PublishRequest` in `backend/models/github.py` (`readme`, `profile` fields and limits) | `src/admin/GitHubPublish.jsx` and `buildProfile` in `src/admin/githubReadme.js` |
+| Marker formats in `backend/services/experience.py` (`experience`, `duration`, `github-bio`) | `src/admin/githubReadme.js` |
+| `span` / `duration` / `total` in `backend/services/experience.py` | `src/utils/getExpYears.js` |
 
 ## Develop and test
 
