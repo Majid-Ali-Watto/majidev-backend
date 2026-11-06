@@ -33,7 +33,14 @@ class GitHubProfileService:
             repo = await self._profile_repo()
             result.readme = await self._write_readme(repo, await self.github.readme(repo), request.readme, COMMIT_MESSAGE)
         if request.profile is not None:
-            result.profile = await self._update_profile(request.profile.model_dump(exclude_none=True))
+            try:
+                result.profile = await self._update_profile(request.profile.model_dump(exclude_none=True))
+            except UpstreamError as err:
+                if result.readme is None:
+                    raise
+                # The README is already committed: say so, or the admin would think nothing was published
+                done = "was already up to date" if result.readme.status == "unchanged" else "was updated"
+                raise UpstreamError(f"The README {done}, but the profile details were not: {err.detail}") from err
         return result
 
     async def refresh(self, today: date) -> GitHubResult:
@@ -48,10 +55,19 @@ class GitHubProfileService:
         markdown = refresh_readme(current.text, today)
         result = GitHubResult(readme=await self._write_readme(repo, current, markdown, REFRESH_MESSAGE))
 
-        bio = bio_from_readme(markdown, today)
-        if bio is not None and len(bio) <= BIO_LIMIT:
-            unchanged = bio == ((await self._account()).get("bio") or "")
-            result.profile = Change(status="unchanged") if unchanged else await self._update_profile({"bio": bio})
+        try:
+            bio = bio_from_readme(markdown, today)
+        except ValueError as err:
+            result.profile = Change(status="skipped", reason=str(err))
+            return result
+        if bio is None:
+            return result
+        if len(bio) > BIO_LIMIT:
+            result.profile = Change(status="skipped", reason=f"the bio would be {len(bio)} characters; GitHub allows {BIO_LIMIT}")
+        elif bio == ((await self._account()).get("bio") or ""):
+            result.profile = Change(status="unchanged")
+        else:
+            result.profile = await self._update_profile({"bio": bio})
         return result
 
     async def _write_readme(self, repo: str, current: ReadmeFile | None, markdown: str, message: str) -> Change:

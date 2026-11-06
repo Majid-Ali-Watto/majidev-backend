@@ -29,11 +29,12 @@ class PublishRequest(BaseModel):
 
 
 class Change(BaseModel):
-    """What happened to one target (the README or the profile); `url` points at it on GitHub."""
+    """What happened to one target (the README or the profile); `url` points at it on GitHub, `reason` says why it was skipped."""
 
-    status: Literal["updated", "unchanged", "missing"]
+    status: Literal["updated", "unchanged", "missing", "skipped"]
     url: str | None = None
     commit: str | None = None
+    reason: str | None = None
 
 
 class GitHubResult(BaseModel):

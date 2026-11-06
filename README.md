@@ -9,8 +9,9 @@ A small FastAPI service, deployed on Vercel, that lets the portfolio site's `/ad
   `Y-M-D`, current, computed exactly like the site does
 
 `/admin → GitHub` builds the README and the profile details from your saved content and posts them to
-`POST /github/publish`. The service accepts the request only from your admin account (it verifies the Firebase
-sign-in token) and holds the GitHub token, so the token never reaches the browser or Firestore.
+`POST /github/publish`. The service accepts the request only from your admin account, signed in with its authenticator app code (it verifies
+the Firebase sign-in token; see "Two-step sign-in" in the MajiDev README), and holds the GitHub token, so the token never
+reaches the browser or Firestore.
 
 ## 1. Create a GitHub token
 
@@ -51,6 +52,8 @@ that hour). The README that `/admin` publishes wraps every experience figure in 
 dates it came from, e.g. `<!--experience:2025-09-15~Present,...-->**3Y 11M**<!--/experience-->`, plus a hidden copy
 of a bio that uses `Y-M-D`. The refresh recomputes those figures for today (`backend/services/experience.py`, a port of the site's
 `src/utils/getExpYears.js`) and commits only when one changed, so it never publishes unpublished edits from `/admin`.
+A marker edited into something unreadable is left as it is (and logged) while the others still refresh; a bio that
+is malformed or would exceed GitHub's 160 characters is not sent, and the answer's `profile` says `skipped` with a `reason`.
 To run it by hand: `curl -H "Authorization: Bearer $CRON_SECRET" https://<your-project>.vercel.app/github/refresh`.
 
 ## Keep in step with the site

@@ -27,13 +27,14 @@ routers → services → repositories, with models shared between them.
 | `backend/core/` | `config.setting()` for env vars, `security` (`require_admin`, `require_cron`), `errors` (`AppError`, `ConfigError`, `UpstreamError`) |
 | `vercel.json` | Vercel Cron: `GET /github/refresh` daily |
 | `tests/` | pytest; GitHub is mocked with `httpx.MockTransport`, token verification with monkeypatch |
+| `.github/workflows/test.yaml` | Runs `uv run pytest` on every push and pull request |
 
 A new feature adds a router (registered in `main.py`), a service for its rules, a repository per outside system, and its models.
 
 ## Routes
 - `GET /health`: liveness
-- `POST /github/publish`: admin only (Firebase ID token, `sub` must be `ADMIN_UID`); commits the README to `<login>/<login>` (skipped when unchanged) and/or PATCHes `/user`
-- `GET /github/refresh`: cron only (`Authorization: Bearer <CRON_SECRET>`); recomputes marked experience figures in the published README and the bio, committing only on change
+- `POST /github/publish`: admin only (Firebase ID token, `sub` must be `ADMIN_UID` and `firebase.sign_in_second_factor` must be `totp`: a sign-in with the authenticator app, as the site's `firestore.rules` require); commits the README to `<login>/<login>` (skipped when unchanged) and/or PATCHes `/user`
+- `GET /github/refresh`: cron only (`Authorization: Bearer <CRON_SECRET>`); recomputes marked experience figures in the published README and the bio, committing only on change. Malformed markers are left unchanged and logged; a bio it cannot send is `{"status": "skipped", "reason": …}`
 
 ## Environment
 `GITHUB_TOKEN`, `FIREBASE_PROJECT_ID`, `ADMIN_UID`, `ALLOWED_ORIGINS` (comma separated), `CRON_SECRET`. Read them through
@@ -42,6 +43,8 @@ A new feature adds a router (registered in `main.py`), a service for its rules, 
 ## Key Patterns
 - Stateless: no database. `/admin` sends the finished README and profile fields; the refresh reads only the README on GitHub, so it never publishes edits the admin has not published
 - Services and repositories raise `AppError` subclasses, never `HTTPException`; `main.py` answers them as `{"detail": …}`. GitHub failures are `UpstreamError` (502) with GitHub's message (`GitHubRepository._call`); keep that for new calls
+- A publish that commits the README but fails on the profile answers 502 with a message saying the README went out
+- `require_admin` verifies through `_CachedGet`, which keeps Google's signing keys for their Cache-Control max-age; don't pass a plain `Request()`
 - New GitHub calls go through `GitHubRepository`, and tests override the `github_repository` dependency rather than hitting the network
 
 ## Contracts with the site (change both repositories together)

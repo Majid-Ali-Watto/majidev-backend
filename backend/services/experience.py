@@ -14,8 +14,11 @@ so a refresh needs nothing but the README itself.
 """
 
 import json
+import logging
 import re
 from datetime import date, timedelta
+
+log = logging.getLogger(__name__)
 
 MARKER = re.compile(r"(<!--(experience|duration):([^>]*?)-->)(.*?)(<!--/\2-->)", re.S)
 BIO_STATE = re.compile(r"<!--github-bio:(.*?)-->", re.S)
@@ -61,25 +64,36 @@ def total(ranges: list[tuple[str, str]], today: date) -> str:
 
 
 def _ranges(spec: str) -> list[tuple[str, str]]:
-    return [tuple(part.split("~", 1)) for part in spec.split(",") if "~" in part]
+    ranges = [tuple(part.split("~", 1)) for part in spec.split(",") if "~" in part]
+    if not ranges:
+        raise ValueError(f"no job dates in {spec!r}")
+    return ranges
 
 
 def refresh_readme(markdown: str, today: date) -> str:
-    """The README with every marked duration recomputed for `today`."""
+    """The README with every marked duration recomputed for `today`. A malformed marker (e.g. edited by hand on GitHub)
+    is left as it is and logged, so one bad marker never stops the others, or the bio, from being refreshed."""
 
     def update(match: re.Match) -> str:
         opening, kind, spec, inner, closing = match.groups()
-        ranges = _ranges(spec)
-        value = total(ranges, today) if kind == "experience" else duration(*ranges[0], today)
+        try:
+            ranges = _ranges(spec)
+            value = total(ranges, today) if kind == "experience" else duration(*ranges[0], today)
+        except ValueError as err:
+            log.warning("Left a malformed %s marker unchanged: %s", kind, err)
+            return match.group(0)
         return opening + DURATION.sub(value, inner, count=1) + closing
 
     return MARKER.sub(update, markdown)
 
 
 def bio_from_readme(markdown: str, today: date) -> str | None:
-    """The bio for `today`, if the README carries a bio template; None otherwise."""
+    """The bio for `today`, if the README carries a bio template; None otherwise. ValueError if the template is malformed."""
     match = BIO_STATE.search(markdown)
     if not match:
         return None
-    state = json.loads(match.group(1))
-    return state["template"].replace(PLACEHOLDER, total([tuple(r) for r in state["experience"]], today))
+    try:
+        state = json.loads(match.group(1))
+        return state["template"].replace(PLACEHOLDER, total([(start, end) for start, end in state["experience"]], today))
+    except (KeyError, TypeError, ValueError) as err:  # json.JSONDecodeError and bad dates are ValueErrors
+        raise ValueError(f"malformed github-bio comment: {err!r}") from err

@@ -10,6 +10,15 @@ from backend.models.github import ReadmeFile
 API = "https://api.github.com"
 
 
+def _message(response: httpx.Response) -> str:
+    """GitHub's error message: the JSON `message` when there is one (an outage page may be HTML or empty)."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text[:200] or response.reason_phrase
+    return body.get("message", response.text) if isinstance(body, dict) else response.text[:200]
+
+
 class GitHubRepository:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -23,9 +32,11 @@ class GitHubRepository:
         if allow_404 and response.status_code == 404:
             return None
         if response.is_error:
-            message = response.json().get("message", response.text) if response.content else response.reason_phrase
-            raise UpstreamError(f"GitHub refused {method} {path}: {response.status_code} {message}")
-        return response.json()
+            raise UpstreamError(f"GitHub refused {method} {path}: {response.status_code} {_message(response)}")
+        try:
+            return response.json()
+        except ValueError as err:
+            raise UpstreamError(f"GitHub sent an unreadable answer to {method} {path}") from err
 
     async def user(self) -> dict:
         """The token's account (`login`, `bio`, `html_url`, ...)."""

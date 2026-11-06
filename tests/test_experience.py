@@ -25,3 +25,8 @@ def test_refresh_leaves_unmarked_text_alone():
 def test_bio_template_with_escaped_dashes():
     readme = '<!--github-bio:{"template": "A -\\u002d B, Y-M-D", "experience": [["2025-09-15", "Present"]]}-->'
     assert bio_from_readme(readme, TODAY) == "A -- B, 1Y 1M"
+
+
+def test_malformed_markers_are_left_as_they_are():
+    readme = "<!--experience:-->1Y 1M<!--/experience--> <!--duration:2025-13-01~Present-->1Y 1M<!--/duration-->"
+    assert refresh_readme(readme, TODAY) == readme

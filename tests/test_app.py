@@ -19,7 +19,7 @@ from backend.core import security  # noqa: E402
 from backend.dependencies import github_repository  # noqa: E402
 from backend.repositories.github import API, GitHubRepository  # noqa: E402
 
-ADMIN_CLAIMS = {"iss": "https://securetoken.google.com/demo-project", "sub": "admin-uid"}
+ADMIN_CLAIMS = {"iss": "https://securetoken.google.com/demo-project", "sub": "admin-uid", "firebase": {"sign_in_second_factor": "totp"}}
 AUTH = {"Authorization": "Bearer signed-in"}
 
 
@@ -39,7 +39,7 @@ def claims(monkeypatch):
 
 
 class FakeGitHub:
-    """Answers GitHub API calls from `routes` ({(method, path): (status, json)}) and records every request."""
+    """Answers GitHub API calls from `routes` ({(method, path): (status, json) or an httpx.Response}) and records every request."""
 
     def __init__(self, routes):
         self.routes = routes
@@ -48,7 +48,10 @@ class FakeGitHub:
     def handler(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else None
         self.calls.append((request.method, request.url.path, body))
-        status, payload = self.routes.get((request.method, request.url.path), (404, {"message": "Not Found"}))
+        route = self.routes.get((request.method, request.url.path), (404, {"message": "Not Found"}))
+        if isinstance(route, httpx.Response):
+            return route
+        status, payload = route
         return httpx.Response(status, json=payload)
 
 
@@ -86,7 +89,15 @@ def test_rejects_missing_or_invalid_sign_in(claims, github, headers, status):
     assert github.calls == []
 
 
-@pytest.mark.parametrize("change", [{"sub": "someone-else"}, {"iss": "https://securetoken.google.com/other-project"}])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"sub": "someone-else"},
+        {"iss": "https://securetoken.google.com/other-project"},
+        {"firebase": {"sign_in_provider": "password"}},  # the password alone, without the authenticator code
+        {"firebase": {"sign_in_second_factor": "phone"}},
+    ],
+)
 def test_rejects_other_accounts(claims, github, change):
     claims.update(change)
     response = client.post("/github/publish", json={"readme": "x"}, headers=AUTH)
@@ -201,3 +212,52 @@ def test_refresh_keeps_bio_current(github):
 
 def test_refresh_without_readme(github):
     assert client.get("/github/refresh", headers=CRON).json() == {"readme": {"status": "missing"}}
+
+
+def test_cron_with_non_ascii_header_is_refused_not_a_crash(github):
+    response = client.get("/github/refresh", headers={"Authorization": "Bearer café".encode("latin-1")})
+    assert response.status_code == 401
+
+
+def test_non_json_github_error_is_an_upstream_error(claims, github):
+    github.routes[("PATCH", "/user")] = httpx.Response(503, text="<html>Unicorn!</html>")
+    response = client.post("/github/publish", json={"profile": {"bio": "x"}}, headers=AUTH)
+    assert response.status_code == 502
+    assert "503 <html>Unicorn!</html>" in response.json()["detail"]
+
+
+def test_failed_profile_update_still_reports_the_committed_readme(claims, github):
+    github.routes[("PUT", README_PATH)] = (201, {"content": {"html_url": "readme-url"}, "commit": {"html_url": "commit-url"}})
+    github.routes[("PATCH", "/user")] = (403, {"message": "Resource not accessible by personal access token"})
+    response = client.post("/github/publish", json={"readme": "# Hi", "profile": {"bio": "x"}}, headers=AUTH)
+    assert response.status_code == 502
+    assert response.json()["detail"].startswith("The README was updated, but the profile details were not")
+
+
+def test_refresh_leaves_a_malformed_marker_and_updates_the_rest(github):
+    readme = "<!--duration:not-a-date~Present-->0Y 0M<!--/duration--> " + STALE
+    github.routes[("GET", README_PATH)] = (200, {"content": encoded(readme), "sha": "abc", "html_url": "readme-url"})
+    github.routes[("PUT", README_PATH)] = (200, {"content": {"html_url": "readme-url"}, "commit": {"html_url": "commit-url"}})
+
+    assert client.get("/github/refresh", headers=CRON).status_code == 200
+    written = base64.b64decode(github.calls[-1][2]["content"]).decode()
+    assert written.startswith("<!--duration:not-a-date~Present-->0Y 0M<!--/duration--> ")
+    assert "**1Y 7M**" in written
+
+
+@pytest.mark.parametrize(
+    ("bio_state", "reason"),
+    [
+        ('{"template": "' + "x" * 160 + ' Y-M-D", "experience": [["2020-01-15", "2021-03-20"]]}', "GitHub allows 160"),
+        ('{"template": "Dev with Y-M-D"}', "malformed github-bio comment"),
+        ("not json", "malformed github-bio comment"),
+    ],
+)
+def test_refresh_reports_a_bio_it_cannot_publish(github, bio_state, reason):
+    readme = f"Hi<!--github-bio:{bio_state}-->"
+    github.routes[("GET", README_PATH)] = (200, {"content": encoded(readme), "sha": "abc", "html_url": "readme-url"})
+
+    profile = client.get("/github/refresh", headers=CRON).json()["profile"]
+    assert profile["status"] == "skipped"
+    assert reason in profile["reason"]
+    assert all(method != "PATCH" for method, _, _ in github.calls)
