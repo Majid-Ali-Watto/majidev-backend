@@ -35,6 +35,8 @@ class _CachedGet:
             expires, response = self._cache.get(url, (0.0, None))
             if time.monotonic() < expires:
                 return response
+            # Bounded: google-auth's default is 120 s, and this lock would hold every other verification behind a hung fetch
+            kwargs.setdefault("timeout", 10)
             response = self._request(url, method=method, **kwargs)
             max_age = MAX_AGE.search(response.headers.get("cache-control", "")) if response.status == 200 else None
             if max_age:

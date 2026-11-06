@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from backend.services.experience import bio_from_readme, duration, refresh_readme, total
 
 TODAY = date(2026, 10, 18)
@@ -25,6 +27,12 @@ def test_refresh_leaves_unmarked_text_alone():
 def test_bio_template_with_escaped_dashes():
     readme = '<!--github-bio:{"template": "A -\\u002d B, Y-M-D", "experience": [["2025-09-15", "Present"]]}-->'
     assert bio_from_readme(readme, TODAY) == "A -- B, 1Y 1M"
+
+
+def test_bio_template_that_is_not_text_is_malformed():
+    readme = '<!--github-bio:{"template": 5, "experience": []}-->'
+    with pytest.raises(ValueError, match="malformed github-bio"):
+        bio_from_readme(readme, TODAY)
 
 
 def test_malformed_markers_are_left_as_they_are():

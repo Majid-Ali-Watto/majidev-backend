@@ -95,5 +95,6 @@ def bio_from_readme(markdown: str, today: date) -> str | None:
     try:
         state = json.loads(match.group(1))
         return state["template"].replace(PLACEHOLDER, total([(start, end) for start, end in state["experience"]], today))
-    except (KeyError, TypeError, ValueError) as err:  # json.JSONDecodeError and bad dates are ValueErrors
+    # json.JSONDecodeError and bad dates are ValueErrors; a non-string template ({"template": 5}) is an AttributeError
+    except (AttributeError, KeyError, TypeError, ValueError) as err:
         raise ValueError(f"malformed github-bio comment: {err!r}") from err

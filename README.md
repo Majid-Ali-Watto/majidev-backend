@@ -10,7 +10,7 @@ A small FastAPI service, deployed on Vercel, that lets the portfolio site's `/ad
 
 `/admin → GitHub` builds the README and the profile details from your saved content and posts them to
 `POST /github/publish`. The service accepts the request only from your admin account, signed in with its authenticator app code (it verifies
-the Firebase sign-in token; see "Two-step sign-in" in the MajiDev README), and holds the GitHub token, so the token never
+the Firebase sign-in token; see "Two-step sign-in" in the MajiDev DEVELOPMENT.md), and holds the GitHub token, so the token never
 reaches the browser or Firestore.
 
 ## 1. Create a GitHub token
@@ -21,7 +21,8 @@ GitHub → Settings → Developer settings → Personal access tokens → **Fine
 - **Repository permissions** → Contents: **Read and write** (for the README)
 - **Account permissions** → Profile: **Read and write** (for the profile details)
 
-If GitHub refuses a fine-grained token, a classic token with the `public_repo` and `user` scopes works too.
+Use a fine-grained token, not a classic one: a classic token with `public_repo` and `user` could write to every public
+repository you can access and manage your SSH and GPG keys, so a leak would reach far beyond the profile README.
 
 ## 2. Deploy on Vercel
 
